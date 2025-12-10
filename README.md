@@ -2,7 +2,7 @@
 
 ## 게임 플레이
 
-[링크]: https://game-test-zombi.netlify.app/
+[게임 바로가기](https://game-test-zombi.netlify.app/)
 
 ## 게임 설명
 
