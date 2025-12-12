@@ -244,7 +244,8 @@
         let currentLevel = 1;
         const maxLevel = 20;
         let levelTimer = 0;
-        const levelDuration = 360; // 약 6초 후 보스 등장
+        // 레벨 지속 시간 1분 (60초 * 60fps) -> 3600 프레임
+        const levelDuration = 3600; 
 
         let spawnTimer = 0;
         let animationId;
@@ -522,27 +523,28 @@
                 this.y = -150; 
                 this.targetY = 80;
                 
-                // 보스 체력 난이도 구간별 설정 (플레이어 초기화 고려하여 조정)
-                // 기본 HP + (레벨 계수) + (플레이어 수 * 15)
-                // 플레이어가 1명으로 시작하므로, 레벨 동안 얼마나 모으느냐가 관건
-                let baseBossHp = 100;
+                // 보스 체력 난이도 구간별 설정 (체력 대폭 하향)
+                // 2분 내 클리어를 위해 훨씬 빠르게 죽도록 조정
+                let baseBossHp = 50; // 기본 체력 감소 (100 -> 50)
                 let levelFactor = 1;
 
                 if (level <= 10) {
-                    // 1-10: 아주 쉬움
-                    levelFactor = level * 30; // 30, 60 ... 300
+                    // 1-10: 순삭 가능
+                    levelFactor = level * 10; // (was 30) -> Max 100
                 } else if (level <= 15) {
-                    // 11-15: 도전적
-                    levelFactor = level * 80; 
+                    // 11-15: 조금 버팀
+                    levelFactor = level * 20; // (was 80) -> Max 300
                 } else if (level <= 19) {
-                    // 16-19: 1.3배 어려움 (체력 급상승)
-                    levelFactor = level * 150; 
+                    // 16-19: 어려움
+                    levelFactor = level * 40; // (was 150) -> Max 760
                 } else {
-                    // 20: 지옥
-                    levelFactor = level * 300; 
+                    // 20: 보스전
+                    levelFactor = level * 60; // (was 300) -> 1200
                 }
 
-                this.maxHp = baseBossHp + levelFactor + (playerGroup.count * 10);
+                // 플레이어 비례 체력 계수 대폭 감소 (10 -> 2)
+                // 병력이 많으면 보스가 녹아내리도록 유도
+                this.maxHp = baseBossHp + levelFactor + (playerGroup.count * 2);
                 this.hp = this.maxHp;
                 
                 this.moveTimer = 0;
