@@ -187,7 +187,7 @@
             <strong>5판마다</strong> 강력한 보스가 등장합니다!<br>
             각 레벨은 <strong>20초</strong>간 진행됩니다.<br>
             <span style="color:#e6b800; font-weight:bold;">[M] 머신건</span>, <span style="color:#e6b800; font-weight:bold;">[S] 샷건</span> 아이템을 획득하세요.<br>
-            <strong>주의: 레벨이 넘어가면 병력이 초기화됩니다!</strong>
+            <strong>주의: 레벨이 넘어가면 병력이 1명으로 초기화됩니다!</strong>
         </p>
         <button id="start-btn">작전 시작</button>
     </div>
@@ -1045,10 +1045,13 @@
             currentLevel++;
             levelValEl.innerText = currentLevel;
             gameState = 'playing';
+            levelTimer = 0;
+            spawnTimer = 0;
             levelCompleteScreen.classList.add('hidden');
             
             // 병력 초기화 (중요 요구사항)
             playerGroup.count = 1;
+            soldierCountEl.innerText = 1; // UI 즉시 업데이트
             // 무기도 초기화할지 여부: 요구사항엔 없었으나 초기화가 "Restart" 느낌에 맞음
             playerGroup.setWeapon('normal');
 
@@ -1059,6 +1062,7 @@
             bullets = [];
             items = [];
             enemies = []; // 혹시 남은 적 제거
+            bossBullets = [];
             
             loop();
         }
