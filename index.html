@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>솔저 러너 (Soldier Runner)</title>
+    <title>솔저 러너 (Soldier Runner) - 보스 & 무기 모드</title>
     <style>
         body {
             margin: 0;
@@ -42,6 +42,25 @@
             border-radius: 15px;
         }
 
+        #boss-hp-bar-container {
+            display: none; /* 보스전일 때만 표시 */
+            width: 80%;
+            max-width: 400px;
+            height: 20px;
+            background: #555;
+            border: 2px solid white;
+            border-radius: 10px;
+            margin-top: 10px;
+            overflow: hidden;
+        }
+
+        #boss-hp-bar {
+            width: 100%;
+            height: 100%;
+            background: #ff0055;
+            transition: width 0.1s linear;
+        }
+
         #level-indicator {
             margin-top: 10px;
             font-size: 18px;
@@ -50,7 +69,7 @@
             text-shadow: 1px 1px 2px black;
         }
 
-        #start-screen, #game-over-screen, #win-screen {
+        #start-screen, #game-over-screen, #win-screen, #level-complete-screen {
             position: absolute;
             top: 50%;
             left: 50%;
@@ -73,6 +92,14 @@
 
         #win-screen h1 {
             color: #00aa00;
+        }
+
+        #level-complete-screen {
+            border-color: #ffaa00;
+        }
+        
+        #level-complete-screen h1 {
+            color: #ffaa00;
         }
 
         h1 {
@@ -98,6 +125,11 @@
             color: #0055ff;
             font-weight: bold;
         }
+        
+        .green-highlight {
+            color: #00aa00;
+            font-weight: bold;
+        }
 
         button {
             background: #0055ff;
@@ -110,6 +142,15 @@
             font-weight: bold;
             transition: transform 0.1s, background 0.2s;
             box-shadow: 0 4px 0 #003399;
+        }
+        
+        #next-level-btn {
+            background: #ffaa00;
+            box-shadow: 0 4px 0 #cc8800;
+        }
+        
+        #next-level-btn:hover {
+             background: #ffcc00;
         }
 
         button:hover {
@@ -134,17 +175,29 @@
     <div id="ui-layer">
         <div id="score-board">병력: <span id="soldier-count">1</span></div>
         <div id="level-indicator">LEVEL <span id="level-val">1</span> / 20</div>
+        <!-- 보스 체력바 -->
+        <div id="boss-hp-bar-container">
+            <div id="boss-hp-bar"></div>
+        </div>
     </div>
 
     <div id="start-screen">
-        <h1>SOLDIER RUN</h1>
+        <h1>BOSS & WEAPON MOD</h1>
         <p>
-            총 20개의 레벨을 돌파하세요!<br>
-            2분 동안 생존하면 승리합니다.<br>
-            <span class="blue-highlight">파란 게이트</span>를 통과해 병력을 늘리고,<br>
-            <span class="highlight">빨간 적</span>들을 물리치세요!
+            각 레벨의 끝에 <span class="highlight">강력한 보스</span>가 등장합니다!<br>
+            <span style="color:#e6b800; font-weight:bold;">[M] 머신건</span>, <span style="color:#e6b800; font-weight:bold;">[S] 샷건</span> 아이템을 획득하세요.<br>
+            마우스/터치로 레인을 바꿔 보스를 공격하세요!
         </p>
         <button id="start-btn">작전 시작</button>
+    </div>
+    
+    <div id="level-complete-screen" class="hidden">
+        <h1>BOSS DEFEATED!</h1>
+        <p>
+            레벨 <span id="completed-level-val">1</span> 작전 성공.<br>
+            현재 병력: <span id="current-units">0</span>
+        </p>
+        <button id="next-level-btn">다음 작전으로</button>
     </div>
 
     <div id="game-over-screen" class="hidden">
@@ -155,7 +208,7 @@
 
     <div id="win-screen" class="hidden">
         <h1>MISSION COMPLETE!</h1>
-        <p>축하합니다! 모든 좀비를 물리쳤습니다.<br>최종 병력: <span id="win-score">0</span></p>
+        <p>축하합니다! 모든 좀비와 보스를 물리쳤습니다.<br>최종 병력: <span id="win-score">0</span></p>
         <button id="win-restart-btn">다시 하기</button>
     </div>
 
@@ -170,82 +223,125 @@
         const startScreen = document.getElementById('start-screen');
         const gameOverScreen = document.getElementById('game-over-screen');
         const winScreen = document.getElementById('win-screen');
+        const levelCompleteScreen = document.getElementById('level-complete-screen');
+        const completedLevelValEl = document.getElementById('completed-level-val');
+        const currentUnitsEl = document.getElementById('current-units');
         
         const startBtn = document.getElementById('start-btn');
         const restartBtn = document.getElementById('restart-btn');
         const winRestartBtn = document.getElementById('win-restart-btn');
+        const nextLevelBtn = document.getElementById('next-level-btn');
+
+        const bossHpContainer = document.getElementById('boss-hp-bar-container');
+        const bossHpBar = document.getElementById('boss-hp-bar');
 
         // 게임 설정
-        let gameState = 'start'; 
-        let baseGameSpeed = 4;
+        let gameState = 'start'; // start, playing, boss_fight, level_complete, gameover, win
+        let baseGameSpeed = 3; // 기본 속도를 4에서 3으로 낮춤 (더 쉬움)
         let gameSpeed = baseGameSpeed;
         
         // 레벨 시스템 변수
         let currentLevel = 1;
         const maxLevel = 20;
         let levelTimer = 0;
-        const levelDuration = 360; // 약 6초 (60fps 기준) -> 20레벨 * 6초 = 120초(2분)
+        const levelDuration = 360; // 약 6초 후 보스 등장
 
         let spawnTimer = 0;
         let animationId;
         
         // 터치/마우스 입력
         let inputX = 0;
-        let isTouching = false;
 
         // 객체 관리
         let playerGroup;
         let bullets = [];
         let enemies = [];
         let gates = [];
+        let items = [];
         let particles = [];
         let roadMarkings = [];
+        let currentBoss = null;
+        
+        // 보스 총알 배열 추가
+        let bossBullets = [];
+
+        // 레인 정보
+        let leftLaneX;
+        let rightLaneX;
+        let laneWidth;
 
         function resize() {
-            canvas.width = Math.min(window.innerWidth, 600); // 모바일 비율 유지
+            canvas.width = Math.min(window.innerWidth, 600); 
             canvas.height = window.innerHeight;
             inputX = canvas.width / 2;
+
+            laneWidth = canvas.width / 2;
+            leftLaneX = laneWidth / 2;
+            rightLaneX = laneWidth + laneWidth / 2;
+            
+            if (playerGroup) {
+                playerGroup.targetX = inputX < canvas.width / 2 ? leftLaneX : rightLaneX;
+            }
         }
         window.addEventListener('resize', resize);
         resize();
 
-        // 입력 핸들러
         function handleInputMove(clientX) {
-            // 캔버스 내의 상대적 위치 계산
             const rect = canvas.getBoundingClientRect();
             const x = clientX - rect.left;
             inputX = Math.max(0, Math.min(canvas.width, x));
         }
 
         window.addEventListener('mousemove', (e) => {
-            if(gameState === 'playing') handleInputMove(e.clientX);
+            if(gameState === 'playing' || gameState === 'boss_fight') handleInputMove(e.clientX);
         });
         window.addEventListener('touchmove', (e) => {
-            if(gameState === 'playing') handleInputMove(e.touches[0].clientX);
+            if(gameState === 'playing' || gameState === 'boss_fight') handleInputMove(e.touches[0].clientX);
+        }, {passive: false});
+        window.addEventListener('touchstart', (e) => {
+             if(gameState === 'playing' || gameState === 'boss_fight') handleInputMove(e.touches[0].clientX);
         }, {passive: false});
 
-        // 클래스: 플레이어 그룹 (병사들)
+
+        // 클래스: 플레이어 그룹
         class PlayerGroup {
             constructor() {
                 this.x = canvas.width / 2;
                 this.y = canvas.height - 150;
                 this.count = 1;
-                this.width = 40; // 군집의 대략적 너비
+                this.width = 40;
                 this.shootTimer = 0;
+                this.targetX = this.x;
+                
+                // 무기 시스템
+                this.weaponType = 'normal'; // normal, machinegun, shotgun
+                this.weaponTimer = 0; 
+            }
+
+            setWeapon(type) {
+                this.weaponType = type;
+                this.shootTimer = 0; // 즉시 발사 가능
             }
 
             update() {
-                // 부드러운 이동 (Lerp)
-                this.x += (inputX - this.x) * 0.15;
-                
-                // 너비는 병사 수에 따라 조금씩 커짐 (최대치 제한)
+                this.targetX = inputX < canvas.width / 2 ? leftLaneX : rightLaneX;
+                this.x += (this.targetX - this.x) * 0.2;
                 this.width = 40 + Math.min(this.count * 2, 120);
 
-                // 자동 발사
+                // 자동 발사 로직
                 this.shootTimer++;
-                // 병사가 많을수록 발사 속도가 빨라지거나 탄막이 많아짐
-                let fireRate = Math.max(4, 20 - Math.floor(this.count / 5)); 
                 
+                let fireRate = 20; // Default (느림)
+                
+                if (this.weaponType === 'machinegun') {
+                    fireRate = 5; // 아주 빠름
+                } else if (this.weaponType === 'shotgun') {
+                    fireRate = 30; // 느림
+                } else {
+                    // Normal: 인원수 많으면 조금 빨라짐
+                    fireRate = Math.max(8, 20 - Math.floor(this.count / 10));
+                }
+
                 if (this.shootTimer > fireRate) {
                     this.shoot();
                     this.shootTimer = 0;
@@ -253,35 +349,37 @@
             }
 
             shoot() {
-                // 병사 수에 비례하여 총알 발사 (너무 많으면 렉 걸리므로 제한)
-                let bulletCount = Math.min(this.count, 8); // 한번에 최대 8발 (후반부 위해 증가)
+                let bulletCount = Math.min(this.count, 8); 
                 let spread = this.width;
-                
-                for(let i=0; i<bulletCount; i++) {
-                    let offsetX = (Math.random() - 0.5) * spread;
-                    bullets.push(new Bullet(this.x + offsetX, this.y));
+
+                if (this.weaponType === 'shotgun') {
+                    // 샷건: 한 번에 3발씩 퍼지게 발사
+                    for(let i=0; i<bulletCount; i++) {
+                         let offsetX = (Math.random() - 0.5) * spread;
+                         // 중앙, 좌, 우
+                         bullets.push(new Bullet(this.x + offsetX, this.y, 0, 'shotgun'));
+                         bullets.push(new Bullet(this.x + offsetX, this.y, -2, 'shotgun'));
+                         bullets.push(new Bullet(this.x + offsetX, this.y, 2, 'shotgun'));
+                    }
+                } else {
+                    // 일반 & 머신건: 직사
+                    for(let i=0; i<bulletCount; i++) {
+                        let offsetX = (Math.random() - 0.5) * spread;
+                        bullets.push(new Bullet(this.x + offsetX, this.y, 0, this.weaponType));
+                    }
                 }
             }
 
             draw() {
-                // 중앙 리더와 주변 병사들 그리기
                 ctx.fillStyle = '#0055ff';
-                
-                // 단순화를 위해 병사를 작은 원으로 표현
                 const soldierSize = 8;
                 
-                // 시각적 연출: 병사들이 뭉쳐있는 모습
-                // 리더
                 ctx.beginPath();
                 ctx.arc(this.x, this.y, soldierSize + 2, 0, Math.PI*2);
                 ctx.fill();
 
-                // 나머지 병사들 (랜덤 오프셋이지만 프레임마다 고정된 느낌을 주기 위해 간단히 처리)
-                // 실제로는 배열로 관리해야 겠지만, 성능상 시각적 효과만 줌
-                let drawCount = Math.min(this.count - 1, 20); // 최대 20명만 그림
-                
+                let drawCount = Math.min(this.count - 1, 30);
                 for(let i=0; i<drawCount; i++) {
-                    // 간단한 원형 배치
                     let angle = (Date.now() / 200) + (i * (Math.PI * 2 / drawCount));
                     let dist = 15 + (i % 2) * 10;
                     ctx.beginPath();
@@ -289,134 +387,298 @@
                     ctx.fill();
                 }
 
-                // 숫자 표시
                 ctx.fillStyle = 'white';
                 ctx.font = 'bold 20px Arial';
                 ctx.textAlign = 'center';
                 ctx.fillText(this.count, this.x, this.y - 25);
+                
+                // 무기 상태 표시
+                if (this.weaponType !== 'normal') {
+                    ctx.font = 'bold 14px Arial';
+                    ctx.fillStyle = '#ffff00';
+                    ctx.fillText(this.weaponType === 'machinegun' ? "MACHINE GUN" : "SHOTGUN", this.x, this.y - 45);
+                }
+            }
+        }
+
+        // 보스 총알 클래스 추가
+        class BossBullet {
+            constructor(x, y, vx, vy) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.radius = 8;
+                this.color = '#aa00ff'; // 보라색 에너지탄
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+            }
+
+            draw() {
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2);
+                ctx.fill();
+                
+                // 광원 효과
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 1;
+                ctx.stroke();
             }
         }
 
         class Bullet {
-            constructor(x, y) {
+            constructor(x, y, vx = 0, type = 'normal') {
                 this.x = x;
                 this.y = y;
                 this.radius = 3;
                 this.speed = 15;
-                this.damage = 1;
+                this.vx = vx; // X축 속도 (샷건용)
+                this.type = type;
+                
+                if (type === 'shotgun') {
+                    this.damage = 1.5;
+                    this.color = '#ffaa00';
+                    this.radius = 4;
+                } else if (type === 'machinegun') {
+                    this.damage = 0.6; // 데미지는 낮지만 연사 빠름
+                    this.color = '#00ffff';
+                    this.radius = 2.5;
+                } else {
+                    this.damage = 1;
+                    this.color = '#ffcc00';
+                }
             }
 
             update() {
                 this.y -= this.speed;
+                this.x += this.vx;
             }
 
             draw() {
-                ctx.fillStyle = '#ffcc00';
+                ctx.fillStyle = this.color;
                 ctx.beginPath();
                 ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2);
                 ctx.fill();
             }
         }
 
+        class Item {
+            constructor() {
+                this.size = 40;
+                this.x = (Math.random() < 0.5 ? leftLaneX : rightLaneX) - this.size / 2;
+                this.y = -50;
+                this.speed = gameSpeed;
+                this.type = Math.random() < 0.5 ? 'machinegun' : 'shotgun';
+            }
+            
+            update() {
+                // this.y += this.speed; // 외부 루프에서 처리
+            }
+            
+            draw() {
+                // 아이템 박스
+                ctx.fillStyle = '#e6b800'; // Gold
+                ctx.fillRect(this.x, this.y, this.size, this.size);
+                
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 3;
+                ctx.strokeRect(this.x, this.y, this.size, this.size);
+                
+                // 텍스트
+                ctx.fillStyle = 'white';
+                ctx.font = 'bold 24px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(this.type === 'machinegun' ? 'M' : 'S', this.x + this.size/2, this.y + 28);
+            }
+        }
+
         class Enemy {
             constructor() {
                 this.size = 40 + Math.random() * 20;
-                this.x = Math.random() * (canvas.width - this.size);
+                this.x = (Math.random() < 0.5 ? leftLaneX : rightLaneX) - this.size / 2;
                 this.y = -100;
-                
-                // 레벨 기반 체력 증가
-                let hpMultiplier = 1 + (currentLevel * 0.5); // 레벨 20이면 11배
+                let hpMultiplier = 1 + (currentLevel * 0.5);
                 this.hp = Math.floor((5 + Math.random() * 5) * hpMultiplier); 
-                
                 this.maxHp = this.hp;
-                
-                // 레벨 기반 속도 증가
-                let speedMultiplier = 1 + (currentLevel * 0.05); // 레벨 20이면 2배 속도
-                this.speed = gameSpeed * 0.8 * speedMultiplier; 
-                
+                this.speed = gameSpeed * 0.8; 
                 this.color = '#ff0055';
             }
-
-            update() {
-                this.y += this.speed;
-            }
-
+            update() {}
             draw() {
                 ctx.fillStyle = this.color;
                 ctx.fillRect(this.x, this.y, this.size, this.size);
-                
-                // HP 텍스트
                 ctx.fillStyle = 'white';
                 ctx.font = '14px Arial';
                 ctx.textAlign = 'center';
                 ctx.fillText(this.hp, this.x + this.size/2, this.y + this.size/2 + 5);
-                
-                // 테두리
                 ctx.strokeStyle = 'white';
                 ctx.lineWidth = 2;
                 ctx.strokeRect(this.x, this.y, this.size, this.size);
             }
         }
 
-        class Gate {
-            constructor() {
-                this.width = 120;
-                this.height = 10; // 얇은 통과선
-                this.x = Math.random() * (canvas.width - this.width);
-                this.y = -50;
-                this.speed = gameSpeed;
+        class Boss {
+            constructor(level) {
+                this.width = 100;
+                this.height = 100;
+                this.x = canvas.width / 2 - this.width / 2;
+                this.y = -150; // 위에서 내려옴
+                this.targetY = 80;
                 
-                // 레벨에 따른 게이트 확률 조정
-                // 레벨 1~5: 좋은 게이트 위주
-                // 레벨 15~20: 함정이나 곱하기 위주
-                const rand = Math.random();
-                let difficultyFactor = currentLevel / maxLevel; // 0.05 ~ 1.0
-
-                if (difficultyFactor < 0.3) {
-                    // 초반: 대부분 덧셈/곱셈
-                    if (rand < 0.6) this.setup('add', 5, 15);
-                    else if (rand < 0.9) this.setup('mult', 2, 3);
-                    else this.setup('sub', 5, 10);
-                } else {
-                    // 후반: 함정 증가
-                    if (rand < 0.4) this.setup('add', 10, 30); // 보상도 커짐
-                    else if (rand < 0.7) this.setup('mult', 2, 4);
-                    else this.setup('sub', 10 + (currentLevel*2), 20 + (currentLevel*2));
-                }
-            }
-
-            setup(type, minVal, maxVal) {
-                this.type = type;
-                this.value = Math.floor(Math.random() * (maxVal - minVal)) + minVal;
+                // 보스 체력: 레벨 * 100 + 플레이어 수에 비례
+                // 플레이어가 많으면 체력이 더 많아야 순삭 방지
+                // 난이도 하향: 기본 체력 계수 150 -> 100
+                this.maxHp = (level * 100) + (playerGroup.count * 10);
+                this.hp = this.maxHp;
+                
+                this.moveTimer = 0;
+                this.lane = 'center'; // left, right, center
+                this.state = 'entering'; // entering, fight
+                
+                // 공격 타이머
+                this.attackTimer = 0;
+                // 난이도 하향: 초기 공격 간격 90 -> 120 (더 느리게 쏨)
+                this.attackInterval = Math.max(40, 120 - (level * 3)); 
             }
 
             update() {
-                this.y += this.speed;
+                if (this.state === 'entering') {
+                    this.y += (this.targetY - this.y) * 0.05;
+                    if (Math.abs(this.y - this.targetY) < 5) {
+                        this.state = 'fight';
+                    }
+                } else {
+                    // 좌우 이동 패턴
+                    this.moveTimer++;
+                    if (this.moveTimer > 120) { // 2초마다 이동
+                        this.moveTimer = 0;
+                        const rand = Math.random();
+                        if (rand < 0.5) this.targetX = leftLaneX - this.width/2;
+                        else this.targetX = rightLaneX - this.width/2;
+                    }
+                    
+                    if (this.targetX !== undefined) {
+                        this.x += (this.targetX - this.x) * 0.1;
+                    }
+
+                    // 공격 패턴
+                    this.attackTimer++;
+                    if (this.attackTimer > this.attackInterval) {
+                        this.shoot();
+                        this.attackTimer = 0;
+                    }
+                }
+            }
+
+            shoot() {
+                // 플레이어 방향 계산
+                const centerX = this.x + this.width / 2;
+                const centerY = this.y + this.height;
+                
+                const dx = playerGroup.x - centerX;
+                const dy = playerGroup.y - centerY;
+                const angle = Math.atan2(dy, dx);
+                const speed = 10; // 탄속
+
+                // 기본 발사 (조준 사격)
+                const vx = Math.cos(angle) * speed;
+                const vy = Math.sin(angle) * speed;
+                bossBullets.push(new BossBullet(centerX, centerY, vx, vy));
+
+                // 고레벨 패턴: 산탄 발사 (레벨 5 이상)
+                if (currentLevel >= 5) {
+                     const spreadAngle = 0.3; // 벌어지는 각도
+                     bossBullets.push(new BossBullet(centerX, centerY, Math.cos(angle - spreadAngle) * speed, Math.sin(angle - spreadAngle) * speed));
+                     bossBullets.push(new BossBullet(centerX, centerY, Math.cos(angle + spreadAngle) * speed, Math.sin(angle + spreadAngle) * speed));
+                }
             }
 
             draw() {
-                // 게이트 본체 (반투명 막)
-                ctx.globalAlpha = 0.6;
-                if (this.type === 'sub') {
-                    ctx.fillStyle = '#ff3333'; // 빨강
+                // 보스 몸체
+                ctx.fillStyle = '#aa0033';
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+                
+                // 눈 (화난 표정)
+                ctx.fillStyle = '#ffff00';
+                ctx.beginPath();
+                ctx.moveTo(this.x + 20, this.y + 30);
+                ctx.lineTo(this.x + 40, this.y + 40);
+                ctx.lineTo(this.x + 40, this.y + 25);
+                ctx.fill();
+                
+                ctx.beginPath();
+                ctx.moveTo(this.x + this.width - 20, this.y + 30);
+                ctx.lineTo(this.x + this.width - 40, this.y + 40);
+                ctx.lineTo(this.x + this.width - 40, this.y + 25);
+                ctx.fill();
+
+                // 테두리
+                ctx.lineWidth = 5;
+                ctx.strokeStyle = '#ff0000';
+                ctx.strokeRect(this.x, this.y, this.width, this.height);
+
+                // "BOSS" 텍스트
+                ctx.fillStyle = 'white';
+                ctx.font = 'bold 24px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText("BOSS", this.x + this.width/2, this.y - 10);
+            }
+        }
+
+        class Gate {
+            constructor() {
+                this.width = laneWidth * 0.8;
+                this.height = 10;
+                this.x = (Math.random() < 0.5 ? leftLaneX : rightLaneX) - this.width / 2;
+                this.y = -50;
+                this.speed = gameSpeed;
+                this.isPositive = false;
+                this.hp = 5;
+                this.type = 'sub';
+                this.value = Math.floor(Math.random() * (5 + currentLevel)) + (5 + currentLevel);
+            }
+
+            hit() {
+                if (this.isPositive) return;
+                this.hp--;
+                if (this.hp <= 0) this.transformToPositive();
+            }
+
+            transformToPositive() {
+                this.isPositive = true;
+                createParticles(this.x + this.width / 2, this.y + 40, '#0088ff', 20);
+                const rand = Math.random();
+                if (rand < 0.7) {
+                    this.type = 'add';
+                    this.value = Math.floor(Math.random() * (10 + currentLevel * 2)) + (10 + currentLevel);
                 } else {
-                    ctx.fillStyle = '#0088ff'; // 파랑
+                    this.type = 'mult';
+                    this.value = Math.floor(Math.random() * 2) + 2;
                 }
-                ctx.fillRect(this.x, this.y, this.width, 80); // 판정박스보다 시각적으로 길게
+            }
+
+            update() {}
+            draw() {
+                ctx.globalAlpha = 0.6;
+                ctx.fillStyle = !this.isPositive ? '#ff3333' : '#0088ff';
+                ctx.fillRect(this.x, this.y, this.width, 80);
                 ctx.globalAlpha = 1.0;
 
-                // 텍스트
                 ctx.fillStyle = 'white';
                 ctx.font = 'bold 30px Arial';
                 ctx.textAlign = 'center';
-                let text = '';
-                if (this.type === 'add') text = '+' + this.value;
-                if (this.type === 'mult') text = 'x' + this.value;
-                if (this.type === 'sub') text = '-' + this.value;
-                
+                let text = (this.type === 'add' ? '+' : (this.type === 'mult' ? 'x' : '-')) + this.value;
                 ctx.fillText(text, this.x + this.width/2, this.y + 50);
 
-                // 테두리
+                 if (!this.isPositive) {
+                    ctx.font = 'bold 16px Arial';
+                    ctx.fillText(`HP: ${this.hp}`, this.x + this.width/2, this.y + 75);
+                }
+
                 ctx.lineWidth = 3;
                 ctx.strokeStyle = 'white';
                 ctx.strokeRect(this.x, this.y, this.width, 80);
@@ -425,103 +687,173 @@
 
         class RoadMark {
             constructor() {
-                this.x = canvas.width / 2 - 5;
+                this.x = canvas.width / 2 - 2;
                 this.y = -100;
-                this.width = 10;
+                this.width = 4;
                 this.height = 60;
                 this.speed = gameSpeed;
             }
-            update() { this.y += this.speed; }
+            update() {}
             draw() {
-                ctx.fillStyle = 'rgba(255,255,255,0.3)';
+                ctx.fillStyle = 'rgba(255,255,255,0.5)';
                 ctx.fillRect(this.x, this.y, this.width, this.height);
             }
         }
 
         function spawnEnemy() {
-            // 난이도 계수 (0 ~ 1)
+            if (gameState === 'boss_fight') return; // 보스전엔 소환 안함
+
             let difficulty = currentLevel / maxLevel; 
-
-            // 적 생성 확률: 레벨 1은 매우 낮음, 레벨 20은 매우 높음
-            // 기본 2% + (난이도 * 15%)
-            let spawnChance = 0.02 + (difficulty * 0.15);
             
-            if (Math.random() < spawnChance) { 
-                enemies.push(new Enemy());
-            }
+            // 난이도 하향: 적 생성 확률 대폭 감소
+            // 기존: 0.02 (2%) 시작 -> 변경: 0.005 (0.5%) 시작
+            let spawnChance = 0.005 + (difficulty * 0.1);
+            if (Math.random() < spawnChance) enemies.push(new Enemy());
 
-            // 게이트 생성 (적이 너무 많으면 게이트로 구원)
-            // 후반부일수록 게이트도 자주 나와야 버틸 수 있음
-            let gateChance = 0.01 + (difficulty * 0.02);
-            if (Math.random() < gateChance) {
-                gates.push(new Gate());
-            }
+            // 난이도 하향: 게이트(도움) 생성 확률 증가
+            let gateChance = 0.02 + (difficulty * 0.01);
+            if (Math.random() < gateChance) gates.push(new Gate());
 
-            // 도로 표시
+            // 아이템 생성 (가끔)
+            if (Math.random() < 0.005) items.push(new Item());
+
             if (roadMarkings.length === 0 || roadMarkings[roadMarkings.length-1].y > 200) {
                 roadMarkings.push(new RoadMark());
             }
         }
 
         function checkCollisions() {
-            // 총알 vs 적
+            // 총알 처리
             for (let i = bullets.length - 1; i >= 0; i--) {
                 let b = bullets[i];
-                for (let j = enemies.length - 1; j >= 0; j--) {
-                    let e = enemies[j];
-                    if (b.x > e.x && b.x < e.x + e.size &&
-                        b.y > e.y && b.y < e.y + e.size) {
-                        
-                        e.hp -= b.damage;
-                        bullets.splice(i, 1);
-                        
-                        // 타격 효과
-                        createParticles(b.x, b.y, '#ff0055', 3);
+                let bulletHit = false;
 
-                        if (e.hp <= 0) {
-                            createParticles(e.x + e.size/2, e.y + e.size/2, '#ff0055', 10);
-                            enemies.splice(j, 1);
+                // 보스 충돌
+                if (gameState === 'boss_fight' && currentBoss) {
+                    if (b.x > currentBoss.x && b.x < currentBoss.x + currentBoss.width &&
+                        b.y > currentBoss.y && b.y < currentBoss.y + currentBoss.height) {
+                        
+                        currentBoss.hp -= b.damage;
+                        bulletHit = true;
+                        createParticles(b.x, b.y, '#ffaa00', 1);
+                        
+                        if (currentBoss.hp <= 0) {
+                            createParticles(currentBoss.x + currentBoss.width/2, currentBoss.y + currentBoss.height/2, '#aa0033', 50);
+                            currentBoss = null;
+                            completeLevel();
                         }
-                        break;
                     }
+                }
+
+                // 적 충돌
+                if (!bulletHit) {
+                    for (let j = enemies.length - 1; j >= 0; j--) {
+                        let e = enemies[j];
+                        if (b.x > e.x && b.x < e.x + e.size &&
+                            b.y > e.y && b.y < e.y + e.size) {
+                            
+                            e.hp -= b.damage;
+                            bulletHit = true;
+                            createParticles(b.x, b.y, '#ff0055', 2);
+                            if (e.hp <= 0) {
+                                createParticles(e.x + e.size/2, e.y + e.size/2, '#ff0055', 10);
+                                enemies.splice(j, 1);
+                            }
+                            break;
+                        }
+                    }
+                }
+                
+                // 게이트 충돌 (부정적일 때만)
+                if (!bulletHit) {
+                    for (let k = gates.length - 1; k >= 0; k--) {
+                        let g = gates[k];
+                        if (!g.isPositive &&
+                            b.x > g.x && b.x < g.x + g.width &&
+                            b.y > g.y && b.y < g.y + 80) {
+                            
+                            g.hit();
+                            bulletHit = true;
+                            createParticles(b.x, b.y, '#ff3333', 2);
+                            break;
+                        }
+                    }
+                }
+
+                if (bulletHit) bullets.splice(i, 1);
+            }
+
+            // 보스 총알 vs 플레이어
+            for (let i = bossBullets.length - 1; i >= 0; i--) {
+                let b = bossBullets[i];
+                // 플레이어 그룹은 원형으로 간주 (hitbox)
+                let dx = playerGroup.x - b.x;
+                let dy = playerGroup.y - b.y;
+                let dist = Math.sqrt(dx*dx + dy*dy);
+
+                if (dist < playerGroup.width/2 + b.radius) {
+                    // 피격
+                    playerGroup.count -= 5; // 한 발당 5명 손실
+                    createParticles(playerGroup.x, playerGroup.y, '#ff0000', 10);
+                    bossBullets.splice(i, 1);
                 }
             }
 
-            // 플레이어 vs 게이트
-            // 플레이어 중심점 기준
+            // 플레이어 vs 객체
+            // 게이트
             for (let i = gates.length - 1; i >= 0; i--) {
                 let g = gates[i];
-                // 게이트 판정 (y좌표가 플레이어를 지나칠 때)
-                // 간단한 AABB 충돌
                 if (playerGroup.x > g.x && playerGroup.x < g.x + g.width &&
                     playerGroup.y > g.y && playerGroup.y < g.y + 80) {
                     
-                    // 효과 적용
                     if (g.type === 'add') playerGroup.count += g.value;
                     if (g.type === 'mult') playerGroup.count *= g.value;
                     if (g.type === 'sub') playerGroup.count -= g.value;
                     
-                    // 최대치 제한 (너무 많으면 렉 걸림)
-                    if(playerGroup.count > 300) playerGroup.count = 300;
+                    if(playerGroup.count > 500) playerGroup.count = 500;
+                    if(playerGroup.count < 0) playerGroup.count = 0;
 
-                    createParticles(playerGroup.x, playerGroup.y, '#00ff00', 10);
-                    gates.splice(i, 1); // 통과하면 사라짐
+                    const effectColor = g.isPositive ? '#00ff00' : '#ff0000';
+                    createParticles(playerGroup.x, playerGroup.y, effectColor, 15);
+                    gates.splice(i, 1);
                 }
             }
 
-            // 플레이어 vs 적 (충돌)
+            // 적
             for (let i = enemies.length - 1; i >= 0; i--) {
                 let e = enemies[i];
-                // 거리 기반 충돌 (플레이어 그룹은 원형으로 간주)
                 let dx = playerGroup.x - (e.x + e.size/2);
                 let dy = playerGroup.y - (e.y + e.size/2);
                 let dist = Math.sqrt(dx*dx + dy*dy);
 
                 if (dist < playerGroup.width/2 + e.size/2) {
-                    // 병력 손실
-                    playerGroup.count -= 5; // 한 번 부딪히면 5명 손실
-                    createParticles(playerGroup.x, playerGroup.y, '#ff0000', 5);
-                    enemies.splice(i, 1); // 적은 자폭
+                    playerGroup.count -= 10;
+                    createParticles(playerGroup.x, playerGroup.y, '#ff0000', 10);
+                    enemies.splice(i, 1);
+                }
+            }
+            
+            // 아이템
+            for (let i = items.length - 1; i >= 0; i--) {
+                let item = items[i];
+                let dx = playerGroup.x - (item.x + item.size/2);
+                let dy = playerGroup.y - (item.y + item.size/2);
+                let dist = Math.sqrt(dx*dx + dy*dy);
+                
+                if (dist < playerGroup.width/2 + item.size/2) {
+                    playerGroup.setWeapon(item.type); // 무기 획득
+                    createParticles(playerGroup.x, playerGroup.y, '#ffff00', 20);
+                    items.splice(i, 1);
+                }
+            }
+            
+            // 보스 몸통 박치기 (플레이어에게 큰 데미지)
+            if (gameState === 'boss_fight' && currentBoss) {
+                let dx = playerGroup.x - (currentBoss.x + currentBoss.width/2);
+                let dy = playerGroup.y - (currentBoss.y + currentBoss.height/2);
+                // 대략적인 거리 체크
+                if (Math.abs(dx) < currentBoss.width/2 + 20 && Math.abs(dy) < currentBoss.height/2 + 20) {
+                    playerGroup.count -= 1; // 매 프레임 데미지 (엄청 아픔)
                 }
             }
         }
@@ -530,8 +862,8 @@
             for(let i=0; i<count; i++) {
                 particles.push({
                     x: x, y: y,
-                    vx: (Math.random() - 0.5) * 5,
-                    vy: (Math.random() - 0.5) * 5,
+                    vx: (Math.random() - 0.5) * 8,
+                    vy: (Math.random() - 0.5) * 8,
                     life: 1.0,
                     color: color
                 });
@@ -543,7 +875,7 @@
                 let p = particles[i];
                 p.x += p.vx;
                 p.y += p.vy;
-                p.life -= 0.05;
+                p.life -= 0.04;
                 if(p.life <= 0) particles.splice(i, 1);
             }
         }
@@ -553,36 +885,45 @@
                 ctx.globalAlpha = p.life;
                 ctx.fillStyle = p.color;
                 ctx.beginPath();
-                ctx.arc(p.x, p.y, 3, 0, Math.PI*2);
+                ctx.arc(p.x, p.y, 4, 0, Math.PI*2);
                 ctx.fill();
             }
             ctx.globalAlpha = 1.0;
         }
 
-        function loop() {
-            if (gameState !== 'playing') return;
+        function startBossPhase() {
+            gameState = 'boss_fight';
+            // 적과 게이트 제거 (아이템은 남겨둠)
+            enemies = [];
+            gates = [];
+            bossBullets = []; // 보스 총알 초기화
+            
+            // 보스 생성
+            currentBoss = new Boss(currentLevel);
+            
+            // UI 표시
+            bossHpContainer.style.display = 'block';
+            
+            // 시각적 알림
+            createParticles(canvas.width/2, 100, '#ff0000', 50);
+        }
 
-            // 배경 클리어
+        function loop() {
+            if (gameState !== 'playing' && gameState !== 'boss_fight') return;
+
+            // 배경
             ctx.fillStyle = '#333';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // 레벨 시스템 업데이트
-            levelTimer++;
-            if (levelTimer > levelDuration) {
-                levelTimer = 0;
-                if (currentLevel < maxLevel) {
-                    currentLevel++;
-                    levelValEl.innerText = currentLevel;
-                    // 레벨업 시각 효과 (간단히)
-                    createParticles(canvas.width/2, canvas.height/2, '#ffff00', 20);
-                } else {
-                    // 레벨 20 완료 후 시간 경과 -> 승리!
-                    winGame();
-                    return;
+            // 레벨 타이머 (일반 진행 상태에서만)
+            if (gameState === 'playing') {
+                levelTimer++;
+                if (levelTimer > levelDuration) {
+                    levelTimer = 0;
+                    startBossPhase();
                 }
             }
             
-            // 난이도에 따른 게임 속도 점진적 증가
             gameSpeed = baseGameSpeed + (currentLevel * 0.2);
 
             spawnTimer++;
@@ -592,51 +933,60 @@
             
             playerGroup.update();
             
-            // 객체 업데이트 및 그리기
-            [roadMarkings, gates, enemies, bullets].forEach(arr => {
+            // 객체 업데이트 (스크롤)
+            [roadMarkings, gates, enemies, items, bullets].forEach(arr => {
                 for (let i = arr.length - 1; i >= 0; i--) {
-                    // 객체 속도 업데이트 (전역 gameSpeed 반영)
-                    if(arr[i] instanceof Enemy) {
-                        // 적은 고유 속도 로직이 있으나 게임 빨라지면 같이 빨라져야 함
-                        // Enemy 클래스 내에서 속도 결정하므로 여기선 패스하거나 보정
-                        arr[i].y += arr[i].speed * (gameSpeed / baseGameSpeed * 0.5); 
+                    if (arr[i] instanceof Enemy || arr[i] instanceof Item) {
+                         // 보스전이 아닐때만 내려옴, 보스전엔 적 없음
+                         if (gameState === 'playing' || arr[i] instanceof Item) {
+                            arr[i].y += arr[i].speed * (gameSpeed / baseGameSpeed * 0.5); 
+                         } else {
+                             // 보스전 시작시 화면 밖으로 빠르게 내보내거나 삭제?
+                             // 위 startBossPhase에서 enemies=[] 했으므로 여기 남은건 없음
+                         }
+                    } else if (arr[i] instanceof Gate || arr[i] instanceof RoadMark) {
+                        arr[i].speed = gameSpeed;
+                        arr[i].y += arr[i].speed;
                     } else {
-                        arr[i].speed = gameSpeed; // 게이트, 도로 등은 게임 속도 따라감
-                        arr[i].update();
+                        arr[i].update(); // bullet
                     }
                     
                     if (arr[i].y > canvas.height + 100 || arr[i].y < -200) {
                         if(arr[i].y > canvas.height + 100) arr.splice(i, 1); 
-                    } else {
-                        // 적 draw는 update 안에서 안하므로 여기서 호출
-                         if(!(arr[i] instanceof Enemy)) arr[i].draw(); // Enemy는 별도 드로우 로직 없음? 아 위 코드에 있음.
-                         // 기존 코드 구조상 Enemy.update() 내에서 y증가만 하고 draw는 별도였음. 
-                         // 하지만 위 for문에서 update()를 호출하고 있음.
-                         // Enemy.draw()를 호출해야 함.
                     }
                 }
             });
+
+            // 보스 총알 업데이트
+            for (let i = bossBullets.length - 1; i >= 0; i--) {
+                bossBullets[i].update();
+                if (bossBullets[i].y > canvas.height + 50 || bossBullets[i].y < -50 || 
+                    bossBullets[i].x < -50 || bossBullets[i].x > canvas.width + 50) {
+                    bossBullets.splice(i, 1);
+                }
+            }
             
-            // Enemy, Bullet 등 draw 분리
+            // Draw
             roadMarkings.forEach(r => r.draw());
             gates.forEach(g => g.draw());
-            enemies.forEach(e => {
-                e.update(); // 위에서 update 호출 안하도록 수정 필요하나 복잡하니 여기서 그냥 처리
-                e.draw();
-            });
-            bullets.forEach(b => {
-                // bullet은 위에서 update 호출됨
-                b.draw();
-            });
+            items.forEach(i => i.draw());
+            enemies.forEach(e => e.draw());
+            
+            if (currentBoss) {
+                currentBoss.update();
+                currentBoss.draw();
+                // HP Bar Update
+                const hpPercent = Math.max(0, (currentBoss.hp / currentBoss.maxHp) * 100);
+                bossHpBar.style.width = hpPercent + '%';
+            }
 
-
+            bossBullets.forEach(b => b.draw()); // 보스 총알 그리기
+            bullets.forEach(b => b.draw());
             playerGroup.draw();
             checkCollisions();
-
             updateParticles();
             drawParticles();
 
-            // 게임 오버 체크
             if (playerGroup.count <= 0) {
                 endGame();
                 return;
@@ -650,10 +1000,12 @@
             bullets = [];
             enemies = [];
             gates = [];
+            items = [];
             particles = [];
             roadMarkings = [];
+            bossBullets = []; // 초기화
+            currentBoss = null;
             
-            // 레벨 초기화
             currentLevel = 1;
             levelTimer = 0;
             levelValEl.innerText = 1;
@@ -666,8 +1018,33 @@
             startScreen.classList.add('hidden');
             gameOverScreen.classList.add('hidden');
             winScreen.classList.add('hidden');
-            
+            levelCompleteScreen.classList.add('hidden');
+            bossHpContainer.style.display = 'none';
+
+            resize();
             if(animationId) cancelAnimationFrame(animationId);
+            loop();
+        }
+
+        function completeLevel() {
+            bossHpContainer.style.display = 'none';
+            if (currentLevel >= maxLevel) {
+                winGame();
+                return;
+            }
+            gameState = 'level_complete';
+            completedLevelValEl.innerText = currentLevel;
+            currentUnitsEl.innerText = Math.floor(playerGroup.count);
+            levelCompleteScreen.classList.remove('hidden');
+        }
+
+        function startNextLevel() {
+            currentLevel++;
+            levelValEl.innerText = currentLevel;
+            gameState = 'playing';
+            levelCompleteScreen.classList.add('hidden');
+            // 레벨 시작 시 무기 유지
+            createParticles(canvas.width/2, canvas.height/2, '#ffff00', 30);
             loop();
         }
 
@@ -675,17 +1052,20 @@
             gameState = 'gameover';
             finalLevelEl.innerText = currentLevel;
             gameOverScreen.classList.remove('hidden');
+            bossHpContainer.style.display = 'none';
         }
 
         function winGame() {
             gameState = 'win';
             winScoreEl.innerText = playerGroup.count;
             winScreen.classList.remove('hidden');
+            bossHpContainer.style.display = 'none';
         }
 
         startBtn.addEventListener('click', initGame);
         restartBtn.addEventListener('click', initGame);
         winRestartBtn.addEventListener('click', initGame);
+        nextLevelBtn.addEventListener('click', startNextLevel);
 
     </script>
 </body>
